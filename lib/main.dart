@@ -4,9 +4,11 @@ import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:flutter_foreground_task/flutter_foreground_task.dart';
 import 'package:flutter_localizations/flutter_localizations.dart';
+import 'package:launch_at_startup/launch_at_startup.dart';
 import 'package:media_kit/media_kit.dart';
 import 'package:permission_handler/permission_handler.dart';
 import 'package:provider/provider.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import 'package:tray_manager/tray_manager.dart';
 import 'package:window_manager/window_manager.dart';
 
@@ -35,7 +37,10 @@ import 'ui/transfers_page.dart';
 import 'ui/video_player_page.dart';
 import 'ui/zip_preview_page.dart';
 
-void main() async {
+/// 全局 Navigator key: 托盘菜单等无 context 场景弹窗用
+final _navigatorKey = GlobalKey<NavigatorState>();
+
+void main(List<String> args) async {
   WidgetsFlutterBinding.ensureInitialized();
   MediaKit.ensureInitialized(); // 视频播放器 (media_kit)
   // Android 前台服务通信端口 (必须在 runApp 前初始化)
@@ -47,17 +52,29 @@ void main() async {
   }
   // Windows: 固定宽度窗口 + 自定义标题栏 (仅最小化/关闭, 无最大化)
   if (Platform.isWindows) {
+    // 开机自启动: 静默进托盘, 不弹主窗口
+    final autoStart = args.contains('--autostart');
+    // 开机自启动注册表项 (包内部不处理引号, 路径含空格时必须自行包裹)
+    launchAtStartup.setup(
+      appName: 'cloudSend',
+      appPath: '"${Platform.resolvedExecutable}"',
+      args: const ['--autostart'],
+    );
     await windowManager.ensureInitialized();
-    const opts = WindowOptions(
-      size: Size(420, 780),
-      minimumSize: Size(420, 560),
-      maximumSize: Size(420, 2000), // 宽度锁死, 高度可调
+    // 读深色模式偏好决定窗口底色, 避免深色模式启动时闪白
+    final sp = await SharedPreferences.getInstance();
+    final dark = sp.getBool('darkMode') ?? false;
+    final opts = WindowOptions(
+      size: const Size(420, 780),
+      minimumSize: const Size(420, 560),
+      maximumSize: const Size(420, 2000), // 宽度锁死, 高度可调
       center: true,
       titleBarStyle: TitleBarStyle.hidden,
-      backgroundColor: Colors.white,
+      backgroundColor: dark ? const Color(0xFF101010) : Colors.white,
     );
     await windowManager.waitUntilReadyToShow(opts, () async {
       await windowManager.setMaximizable(false);
+      if (autoStart) return; // 自启动: 保持隐藏, 等用户点托盘图标
       await windowManager.show();
       await windowManager.focus();
     });
@@ -145,6 +162,29 @@ class _TrayController with WindowListener, TrayListener {
       await windowManager.show();
       await windowManager.focus();
     } else if (menuItem.key == 'quit') {
+      // 有传输在进行时先亮窗确认, 避免误点退出把传输杀了
+      final active = client.transfers
+          .where(
+            (t) =>
+                t.status == TransferStatus.accepted ||
+                t.status == TransferStatus.transferring ||
+                t.status == TransferStatus.verifying,
+          )
+          .length;
+      if (active > 0) {
+        await windowManager.show();
+        await windowManager.focus();
+        final ctx = _navigatorKey.currentContext;
+        if (ctx == null) return;
+        final ok = await AppDialog.confirm(
+          ctx,
+          title: tr('quit_confirm_title'),
+          message: trf('quit_confirm_msg', {'n': active}),
+          okLabel: tr('tray_quit'),
+          danger: true,
+        );
+        if (!ok) return;
+      }
       await windowManager.setPreventClose(false);
       await windowManager.close();
     }
@@ -486,7 +526,6 @@ class CloudSendApp extends StatefulWidget {
 }
 
 class _CloudSendAppState extends State<CloudSendApp> {
-  final _navigatorKey = GlobalKey<NavigatorState>();
   StreamSubscription<FileTransfer>? _offerSub;
   StreamSubscription<FileTransfer>? _retrySub;
   final List<FileTransfer> _offerQueue = []; // 多个请求排队弹窗

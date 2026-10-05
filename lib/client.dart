@@ -12,6 +12,7 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter/widgets.dart';
 import 'package:flutter_local_notifications/flutter_local_notifications.dart';
 import 'package:image/image.dart' as img;
+import 'package:launch_at_startup/launch_at_startup.dart';
 import 'package:pasteboard/pasteboard.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:permission_handler/permission_handler.dart';
@@ -65,6 +66,9 @@ class RelayClient extends ChangeNotifier {
   String serverAddr = '';
   bool connected = false;
   bool darkMode = false;
+
+  /// 开机自动启动 (仅 Windows; 开启后带 --autostart 参数静默进托盘)
+  bool launchAtStartupEnabled = false;
 
   /// 功能模式: both=局域网+中继 (默认, 局域网优先, 失败/离网自动切中继)
   /// relay=仅中继 (停用局域网发现与直连) / lan=仅局域网 (不连中继)
@@ -426,6 +430,13 @@ class RelayClient extends ChangeNotifier {
     );
     _downloadDirOverride = sp.getString('downloadDir');
     darkMode = sp.getBool('darkMode') ?? false;
+    launchAtStartupEnabled = sp.getBool('launchAtStartup') ?? false;
+    // exe 路径可能变化 (升级/移动), 开启状态下每次启动都重写注册表项
+    if (launchAtStartupEnabled && Platform.isWindows) {
+      try {
+        await launchAtStartup.enable();
+      } catch (_) {}
+    }
     // 恢复未读数 (重启不丢角标)
     final unreadRaw = sp.getString('unread');
     if (unreadRaw != null) {
@@ -756,6 +767,23 @@ class RelayClient extends ChangeNotifier {
   Future<void> setDarkMode(bool v) async {
     darkMode = v;
     (await SharedPreferences.getInstance()).setBool('darkMode', v);
+    notifyListeners();
+  }
+
+  /// 切换开机自启动 (持久化, 仅 Windows 写注册表)
+  Future<void> setLaunchAtStartup(bool v) async {
+    launchAtStartupEnabled = v;
+    (await SharedPreferences.getInstance()).setBool('launchAtStartup', v);
+    if (Platform.isWindows) {
+      try {
+        if (v) {
+          await launchAtStartup.enable();
+        } else {
+          await launchAtStartup.disable();
+        }
+      } catch (_) {}
+    }
+    Log.i('app', 'launchAtStartup -> $v');
     notifyListeners();
   }
 

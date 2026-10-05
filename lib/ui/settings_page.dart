@@ -1168,6 +1168,16 @@ class GeneralSettingsPage extends StatelessWidget {
           const SizedBox(height: 10),
           _Group(
             children: [
+              if (Platform.isWindows)
+                _Tile(
+                  title: tr('launch_at_startup'),
+                  trailing: Switch(
+                    value: c.launchAtStartupEnabled,
+                    onChanged: (v) => c.setLaunchAtStartup(v),
+                  ),
+                  onTap: () =>
+                      c.setLaunchAtStartup(!c.launchAtStartupEnabled),
+                ),
               _Tile(
                 title: tr('queue_sends'),
                 trailing: Switch(

@@ -68,6 +68,7 @@ dependencies:
   media_kit_video: ^2.0.1
   media_kit_libs_video: ^1.0.7
   tray_manager: ^0.5.3
+  launch_at_startup: ^0.5.1
   qr_flutter: ^4.1.0
   mobile_scanner: ^7.4.2
   gal: ^2.3.3

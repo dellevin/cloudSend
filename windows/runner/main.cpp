@@ -17,6 +17,22 @@ int APIENTRY wWinMain(_In_ HINSTANCE instance, _In_opt_ HINSTANCE prev,
   // plugins.
   ::CoInitializeEx(nullptr, COINIT_APARTMENTTHREADED);
 
+  // Single instance check: if another instance is already running,
+  // bring its window to the foreground and exit.
+  HANDLE mutex = ::CreateMutex(nullptr, TRUE, L"cloudsend_single_instance_mutex");
+  if (::GetLastError() == ERROR_ALREADY_EXISTS) {
+    HWND hwnd = ::FindWindow(L"FLUTTER_RUNNER_WIN32_WINDOW", L"cloudsend");
+    if (hwnd != nullptr) {
+      // Restore in case the window is hidden (tray) or minimized.
+      ::ShowWindow(hwnd, SW_RESTORE);
+      ::SetForegroundWindow(hwnd);
+    }
+    if (mutex != nullptr) {
+      ::CloseHandle(mutex);
+    }
+    return EXIT_SUCCESS;
+  }
+
   flutter::DartProject project(L"data");
 
   std::vector<std::string> command_line_arguments =
@@ -40,5 +56,8 @@ int APIENTRY wWinMain(_In_ HINSTANCE instance, _In_opt_ HINSTANCE prev,
   }
 
   ::CoUninitialize();
+  if (mutex != nullptr) {
+    ::CloseHandle(mutex);
+  }
   return EXIT_SUCCESS;
 }

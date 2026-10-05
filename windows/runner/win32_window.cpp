@@ -213,6 +213,19 @@ Win32Window::MessageHandler(HWND hwnd,
       }
       return 0;
 
+    case WM_QUERYENDSESSION:
+      // Allow the session (shutdown/logoff) to end.
+      return TRUE;
+
+    case WM_ENDSESSION:
+      if (wparam == TRUE) {
+        // Session is ending: destroy the window to exit the process.
+        // Bypasses WM_CLOSE so the "hide to tray on close" interception
+        // is not triggered (quit_on_close_ posts WM_QUIT in WM_DESTROY).
+        DestroyWindow(hwnd);
+      }
+      return 0;
+
     case WM_DWMCOLORIZATIONCOLORCHANGED:
       UpdateTheme(hwnd);
       return 0;
